@@ -9,7 +9,11 @@ import {
     startPipeline,
     getPipelineStatus,
     exportProject,
+    updateTextBlock as apiUpdateTextBlock,
 } from "../api/client";
+
+// Debounce timers for auto-saving text block edits
+const saveTimers = new Map();
 
 const useProjectStore = create((set, get) => ({
     // ── State ──────────────────────────────────────────────────
@@ -98,14 +102,12 @@ const useProjectStore = create((set, get) => ({
         const { project, activePage, activePageIndex } = get();
         if (!project || !activePage) return;
 
-        // Update the text block in the active page
+        // Optimistic local update
         const updatedBlocks = activePage.text_blocks.map((block) =>
             block.id === blockId ? { ...block, ...updates, is_edited: true } : block
         );
 
         const updatedPage = { ...activePage, text_blocks: updatedBlocks };
-
-        // Update in the project pages array too
         const updatedPages = project.pages.map((p, i) =>
             i === activePageIndex ? updatedPage : p
         );
@@ -114,6 +116,20 @@ const useProjectStore = create((set, get) => ({
             activePage: updatedPage,
             project: { ...project, pages: updatedPages },
         });
+
+        // Debounced save to backend (500ms after last edit)
+        if (saveTimers.has(blockId)) clearTimeout(saveTimers.get(blockId));
+        saveTimers.set(
+            blockId,
+            setTimeout(async () => {
+                saveTimers.delete(blockId);
+                try {
+                    await apiUpdateTextBlock(project.id, blockId, updates);
+                } catch (err) {
+                    console.error(`Failed to save block ${blockId}:`, err);
+                }
+            }, 500)
+        );
     },
 
     deleteTextBlock: (blockId) => {

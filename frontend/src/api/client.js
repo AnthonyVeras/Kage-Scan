@@ -104,4 +104,19 @@ export async function exportProject(id, projectName = "project") {
     window.URL.revokeObjectURL(url);
 }
 
+/**
+ * Update a text block (partial update).
+ * @param {string} projectId - Project UUID
+ * @param {string} blockId - TextBlock UUID
+ * @param {object} updates - Fields to update
+ * @returns {Promise<object>} Updated text block
+ */
+export async function updateTextBlock(projectId, blockId, updates) {
+    const { data } = await api.patch(
+        `/projects/${projectId}/blocks/${blockId}`,
+        updates
+    );
+    return data;
+}
+
 export default api;

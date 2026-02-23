@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.project import Page, Project, TextBlock
-from app.schemas.project import ProjectListItem, ProjectResponse
+from app.schemas.project import ProjectListItem, ProjectResponse, TextBlockResponse, TextBlockUpdate
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -138,3 +138,47 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found.")
 
     return project
+
+
+# ── PATCH /{project_id}/blocks/{block_id} — Update Text Block ─────────
+@router.patch(
+    "/{project_id}/blocks/{block_id}",
+    response_model=TextBlockResponse,
+)
+async def update_text_block(
+    project_id: str,
+    block_id: str,
+    payload: TextBlockUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Partially update a text block's fields.
+    Only the fields sent in the request body will be updated.
+    Always marks the block as `is_edited = True`.
+    """
+    # Verify block exists and belongs to this project
+    result = await db.execute(
+        select(TextBlock)
+        .join(Page, TextBlock.page_id == Page.id)
+        .where(Page.project_id == project_id, TextBlock.id == block_id)
+    )
+    block = result.scalar_one_or_none()
+
+    if not block:
+        raise HTTPException(
+            status_code=404,
+            detail=f"TextBlock '{block_id}' not found in project '{project_id}'.",
+        )
+
+    # Apply only the fields the user sent
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(block, field, value)
+
+    # Always mark as edited
+    block.is_edited = True
+    await db.flush()
+
+    logger.info(f"TextBlock {block_id} updated: {list(update_data.keys())}")
+
+    return block
