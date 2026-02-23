@@ -12,7 +12,7 @@ from loguru import logger
 
 from app.config import settings
 from app.database import init_db
-from app.routers import export, pipeline, projects
+from app.routers import export, pipeline, projects, settings as settings_router
 
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────
@@ -56,6 +56,7 @@ app.add_middleware(
 app.include_router(projects.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
+app.include_router(settings_router.router, prefix="/api")
 
 # ── Static Files (serve uploaded images) ──────────────────────────────
 # Mount the data directory so frontend can load images via:

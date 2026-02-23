@@ -120,3 +120,28 @@ export async function updateTextBlock(projectId, blockId, updates) {
 }
 
 export default api;
+
+// ── Settings ────────────────────────────────────────────────────────
+
+export async function getSettings() {
+    const { data } = await api.get("/settings/");
+    return data;
+}
+
+export async function updateSettings(updates) {
+    const { data } = await api.patch("/settings/", updates);
+    return data;
+}
+
+export async function startCopilotAuth() {
+    const { data } = await api.post("/settings/copilot/device-code");
+    return data;
+}
+
+export async function pollCopilotAuth(deviceCode) {
+    const { data } = await api.post("/settings/copilot/poll", {
+        device_code: deviceCode,
+    });
+    return data;
+}
+
