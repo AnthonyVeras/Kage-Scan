@@ -4,8 +4,8 @@
  * Supports drag & resize via Konva Transformer.
  */
 
-import { useRef, useEffect, useState, useCallback } from "react";
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer } from "react-konva";
+import React, { useRef, useEffect, useState, useCallback } from "react";
+import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from "react-konva";
 import useProjectStore from "../../stores/projectStore";
 
 /**
@@ -176,38 +176,78 @@ export default function Canvas() {
                         />
                     )}
 
-                    {/* Text block overlays */}
+                    {/* Text block overlays with translated text */}
                     {textBlocks.map((block) => {
                         const isSelected = block.id === selectedBlockId;
+                        const bx = block.box_x * scale;
+                        const by = block.box_y * scale;
+                        const bw = block.box_width * scale;
+                        const bh = block.box_height * scale;
+                        const hasTranslation = block.text_translated && !block.text_translated.startsWith("[ERRO]") && !block.text_translated.startsWith("(OCR indisponivel)");
 
                         return (
-                            <Rect
-                                key={block.id}
-                                ref={isSelected ? selectedRectRef : null}
-                                x={block.box_x * scale}
-                                y={block.box_y * scale}
-                                width={block.box_width * scale}
-                                height={block.box_height * scale}
-                                fill={
-                                    isSelected
-                                        ? "rgba(243, 145, 160, 0.35)"
-                                        : "rgba(243, 145, 160, 0.15)"
-                                }
-                                stroke={isSelected ? "#F391A0" : "rgba(243, 145, 160, 0.4)"}
-                                strokeWidth={isSelected ? 2 : 1}
-                                cornerRadius={4}
-                                draggable
-                                onClick={() => handleBlockClick(block.id)}
-                                onTap={() => handleBlockClick(block.id)}
-                                onDragEnd={(e) => handleDragEnd(block.id, e)}
-                                onTransformEnd={(e) => handleTransformEnd(block.id, e)}
-                                onMouseEnter={(e) => {
-                                    e.target.getStage().container().style.cursor = "move";
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.target.getStage().container().style.cursor = "default";
-                                }}
-                            />
+                            <React.Fragment key={block.id}>
+                                {/* White fill to cover original text */}
+                                {hasTranslation && (
+                                    <Rect
+                                        x={bx}
+                                        y={by}
+                                        width={bw}
+                                        height={bh}
+                                        fill="#FFFFFF"
+                                        cornerRadius={2}
+                                        listening={false}
+                                    />
+                                )}
+
+                                {/* Translated text */}
+                                {hasTranslation && (
+                                    <Text
+                                        x={bx + 2}
+                                        y={by + 2}
+                                        width={bw - 4}
+                                        height={bh - 4}
+                                        text={block.text_translated}
+                                        fontSize={(block.font_size || 18) * scale}
+                                        fontFamily={block.font_family || "Arial"}
+                                        fill={block.text_color || "#000000"}
+                                        align={block.text_alignment || "center"}
+                                        verticalAlign="middle"
+                                        wrap="word"
+                                        listening={false}
+                                    />
+                                )}
+
+                                {/* Selection overlay (pink box) */}
+                                <Rect
+                                    ref={isSelected ? selectedRectRef : null}
+                                    x={bx}
+                                    y={by}
+                                    width={bw}
+                                    height={bh}
+                                    fill={
+                                        isSelected
+                                            ? "rgba(243, 145, 160, 0.35)"
+                                            : hasTranslation
+                                                ? "rgba(0, 0, 0, 0)"
+                                                : "rgba(243, 145, 160, 0.15)"
+                                    }
+                                    stroke={isSelected ? "#F391A0" : hasTranslation ? "rgba(0,0,0,0)" : "rgba(243, 145, 160, 0.4)"}
+                                    strokeWidth={isSelected ? 2 : 1}
+                                    cornerRadius={4}
+                                    draggable
+                                    onClick={() => handleBlockClick(block.id)}
+                                    onTap={() => handleBlockClick(block.id)}
+                                    onDragEnd={(e) => handleDragEnd(block.id, e)}
+                                    onTransformEnd={(e) => handleTransformEnd(block.id, e)}
+                                    onMouseEnter={(e) => {
+                                        e.target.getStage().container().style.cursor = "move";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.target.getStage().container().style.cursor = "default";
+                                    }}
+                                />
+                            </React.Fragment>
                         );
                     })}
 

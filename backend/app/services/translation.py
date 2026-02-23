@@ -94,6 +94,9 @@ async def _refresh_copilot_token(access_token: str, db=None) -> str | None:
                 headers={
                     "Authorization": f"token {access_token}",
                     "Accept": "application/json",
+                    "User-Agent": "GitHubCopilotChat/0.22.2",
+                    "Editor-Version": "vscode/1.96.0",
+                    "Editor-Plugin-Version": "copilot-chat/0.22.2",
                 },
             )
 
@@ -132,6 +135,18 @@ async def _call_llm(messages: list[dict], max_tokens: int = 500) -> str:
     if not config["api_key"]:
         raise ValueError("No AI provider configured. Go to Settings to set up OpenRouter or Copilot.")
 
+    provider = config["provider"]
+
+    # ── Copilot: direct httpx (bypass litellm) ────────────────────
+    if provider == "copilot":
+        return await _call_copilot_direct(
+            token=config["api_key"],
+            model=config["model"],
+            messages=messages,
+            max_tokens=max_tokens,
+        )
+
+    # ── OpenRouter / .env: use litellm ────────────────────────────
     try:
         import litellm
 
@@ -151,8 +166,41 @@ async def _call_llm(messages: list[dict], max_tokens: int = 500) -> str:
         return response.choices[0].message.content.strip()
 
     except Exception as e:
-        logger.error(f"LLM call failed (provider={config['provider']}): {e}")
+        logger.error(f"LLM call failed (provider={provider}, model={config['model']}): {e}")
         raise
+
+
+async def _call_copilot_direct(
+    token: str, model: str, messages: list[dict], max_tokens: int = 500
+) -> str:
+    """Call Copilot API directly via httpx (OAI-compatible endpoint)."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.githubcopilot.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Copilot-Integration-Id": "vscode-chat",
+                "Editor-Version": "vscode/1.96.0",
+                "Editor-Plugin-Version": "copilot/1.0.0",
+                "Openai-Intent": "conversation-panel",
+            },
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": max_tokens,
+                "stream": False,
+            },
+        )
+
+        if resp.status_code != 200:
+            body = resp.text[:500]
+            logger.error(f"Copilot API error {resp.status_code}: {body}")
+            raise RuntimeError(f"Copilot API returned {resp.status_code}: {body}")
+
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
 
 
 class Translator:
@@ -175,27 +223,31 @@ class Translator:
         if not text or not text.strip():
             return ""
 
-        lang_names = {
-            "ja": "japonês", "ko": "coreano",
-            "zh": "chinês", "en": "inglês",
-            "pt-br": "português brasileiro",
-        }
-        src_name = lang_names.get(source_lang, source_lang)
-        tgt_name = lang_names.get(target_lang, target_lang)
-
-        user_prompt = (
-            f"Traduza o seguinte texto de {src_name} para {tgt_name}:\n\n"
-            f"{text}"
-        )
+        # Skip placeholder OCR text — can't translate coordinates
+        if text.startswith("[テキスト") or text.startswith("[TEXT"):
+            return f"(OCR indisponivel) {text}"
 
         try:
+            lang_names = {
+                "ja": "Japanese", "ko": "Korean",
+                "zh": "Chinese", "en": "English",
+                "pt-br": "Brazilian Portuguese",
+            }
+            src = lang_names.get(source_lang, source_lang)
+            tgt = lang_names.get(target_lang, target_lang)
+
+            user_prompt = (
+                f"Translate this {src} manga dialogue to {tgt}. "
+                f"Return ONLY the translation, nothing else:\n\n{text}"
+            )
+
             translated = await _call_llm([
                 {"role": "system", "content": MANGA_TRANSLATOR_PROMPT},
                 {"role": "user", "content": user_prompt},
             ])
             logger.debug(
-                f"Translated [{source_lang}→{target_lang}]: "
-                f"'{text[:30]}...' → '{translated[:30]}...'"
+                f"Translated [{source_lang}->{target_lang}]: "
+                f"'{text[:30]}' -> '{translated[:30]}'"
             )
             return translated
         except Exception as e:
@@ -208,54 +260,23 @@ class Translator:
         source_lang: str = "ja",
         target_lang: str = "pt-br",
     ) -> list[str]:
-        """Translate multiple text blocks in a single batched prompt."""
+        """Translate multiple text blocks."""
         if not texts:
             return []
 
-        if len(texts) <= 2:
-            return [
-                await self.translate_text(t, source_lang, target_lang)
-                for t in texts
-            ]
-
-        lang_names = {
-            "ja": "japonês", "ko": "coreano",
-            "zh": "chinês", "en": "inglês",
-            "pt-br": "português brasileiro",
-        }
-        src_name = lang_names.get(source_lang, source_lang)
-        tgt_name = lang_names.get(target_lang, target_lang)
-
-        numbered = "\n".join(f"[{i+1}] {t}" for i, t in enumerate(texts))
-        user_prompt = (
-            f"Traduza os {len(texts)} trechos abaixo de {src_name} para {tgt_name}. "
-            f"São falas de balões de um mangá/manhwa — mantenha a mesma numeração na resposta.\n"
-            f"Retorne APENAS as traduções numeradas, uma por linha.\n\n"
-            f"{numbered}"
+        # Check if all texts are placeholders — skip translation entirely
+        all_placeholder = all(
+            t.startswith("[テキスト") or t.startswith("[TEXT") for t in texts
         )
+        if all_placeholder:
+            logger.info(f"All {len(texts)} blocks are OCR placeholders, skipping translation")
+            return [f"(OCR indisponivel) {t}" for t in texts]
 
-        try:
-            raw = await _call_llm(
-                [
-                    {"role": "system", "content": MANGA_TRANSLATOR_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=1500,
-            )
+        # For small batches or mixed placeholder/real text, translate individually
+        results = []
+        for t in texts:
+            result = await self.translate_text(t, source_lang, target_lang)
+            results.append(result)
 
-            import re
-            translations = []
-            for i in range(len(texts)):
-                pattern = rf"\[{i+1}\]\s*(.+)"
-                match = re.search(pattern, raw)
-                if match:
-                    translations.append(match.group(1).strip())
-                else:
-                    translations.append(f"[ERRO] {texts[i]}")
-
-            logger.info(f"Batch translated {len(translations)} blocks")
-            return translations
-
-        except Exception as e:
-            logger.error(f"Batch translation failed: {e}")
-            return [f"[ERRO] {t}" for t in texts]
+        logger.info(f"Batch translated {len(results)} blocks")
+        return results

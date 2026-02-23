@@ -2,6 +2,7 @@
 Kage Scan — OCR Service
 Wraps manga-ocr (Japanese) with lazy singleton + asyncio.to_thread.
 Supports EasyOCR fallback for Korean, Chinese, and English.
+Falls back to pytesseract or placeholder when AI packages unavailable.
 """
 
 import asyncio
@@ -15,12 +16,15 @@ class OcrEngine:
     Extracts text from cropped manga panels.
     - Japanese: manga-ocr (specialized, higher accuracy)
     - Korean/Chinese/English: EasyOCR
+    - Fallback: pytesseract or placeholder text
     Models are loaded lazily on first use (singleton pattern).
     """
 
     _instance: "OcrEngine | None" = None
     _manga_ocr = None
     _easyocr_readers: dict = {}
+    _tesseract_available: bool | None = None
+    _backend: str | None = None
 
     def __new__(cls) -> "OcrEngine":
         if cls._instance is None:
@@ -29,19 +33,56 @@ class OcrEngine:
 
     # ── Model Loaders ─────────────────────────────────────────────
 
+    def _detect_backend(self) -> str:
+        """Detect which OCR backend is available."""
+        if self._backend is not None:
+            return self._backend
+
+        # Try manga-ocr first (best for Japanese manga)
+        try:
+            from manga_ocr import MangaOcr
+            self._backend = "manga_ocr"
+            logger.info("✅ OCR backend: manga-ocr available")
+            return self._backend
+        except ImportError:
+            pass
+
+        # Try EasyOCR
+        try:
+            import easyocr
+            self._backend = "easyocr"
+            logger.info("✅ OCR backend: EasyOCR available")
+            return self._backend
+        except ImportError:
+            pass
+
+        # Try pytesseract
+        try:
+            import pytesseract
+            pytesseract.get_tesseract_version()
+            self._backend = "tesseract"
+            logger.info("✅ OCR backend: pytesseract available")
+            return self._backend
+        except Exception:
+            pass
+
+        # Placeholder fallback
+        self._backend = "placeholder"
+        logger.warning(
+            "⚠️ No OCR engine available (manga-ocr, easyocr, pytesseract). "
+            "Text blocks will have placeholder text. Install one of the OCR packages."
+        )
+        return self._backend
+
     def _load_manga_ocr(self) -> None:
         """Lazy-load manga-ocr model."""
         if self._manga_ocr is not None:
             return
 
         logger.info("⏳ Loading manga-ocr model (first run)...")
-        try:
-            from manga_ocr import MangaOcr
-            self._manga_ocr = MangaOcr()
-            logger.info("✅ manga-ocr loaded")
-        except ImportError:
-            logger.error("manga-ocr not installed. pip install manga-ocr")
-            raise
+        from manga_ocr import MangaOcr
+        self._manga_ocr = MangaOcr()
+        logger.info("✅ manga-ocr loaded")
 
     def _load_easyocr(self, lang: str) -> None:
         """Lazy-load EasyOCR reader for a specific language."""
@@ -49,60 +90,50 @@ class OcrEngine:
             return
 
         logger.info(f"⏳ Loading EasyOCR reader for '{lang}'...")
-        try:
-            import easyocr
+        import easyocr
 
-            # Map our language codes to EasyOCR codes
-            lang_map = {
-                "ko": ["ko", "en"],
-                "zh": ["ch_sim", "en"],
-                "en": ["en"],
-            }
-            ocr_langs = lang_map.get(lang, ["en"])
+        lang_map = {
+            "ko": ["ko", "en"],
+            "zh": ["ch_sim", "en"],
+            "en": ["en"],
+            "ja": ["ja", "en"],
+        }
+        ocr_langs = lang_map.get(lang, ["en"])
 
-            self._easyocr_readers[lang] = easyocr.Reader(
-                ocr_langs,
-                gpu=False,  # Set True if CUDA available
-            )
-            logger.info(f"✅ EasyOCR loaded for: {ocr_langs}")
-        except ImportError:
-            logger.error("easyocr not installed. pip install easyocr")
-            raise
+        self._easyocr_readers[lang] = easyocr.Reader(
+            ocr_langs,
+            gpu=False,
+        )
+        logger.info(f"✅ EasyOCR loaded for: {ocr_langs}")
 
     # ── Crop Helper ───────────────────────────────────────────────
 
     @staticmethod
     def _crop_bbox(image_path: str, bbox: dict) -> Image.Image:
-        """
-        Crop a bounding box region from an image.
-        bbox format: {"x": int, "y": int, "w": int, "h": int}
-        """
+        """Crop a bounding box region from an image."""
         img = Image.open(image_path).convert("RGB")
         x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
 
-        # Clamp coordinates to image bounds
         img_w, img_h = img.size
         x1 = max(0, x)
         y1 = max(0, y)
         x2 = min(img_w, x + w)
         y2 = min(img_h, y + h)
 
-        crop = img.crop((x1, y1, x2, y2))
-        return crop
+        return img.crop((x1, y1, x2, y2))
 
     # ── OCR Runners ───────────────────────────────────────────────
 
     def _ocr_japanese_sync(self, image_path: str, bbox: dict) -> str:
-        """Run manga-ocr on a cropped region (synchronous)."""
+        """Run manga-ocr on a cropped region."""
         self._load_manga_ocr()
         crop = self._crop_bbox(image_path, bbox)
-        text = self._manga_ocr(crop)  # manga-ocr accepts PIL Image
+        text = self._manga_ocr(crop)
         return text.strip()
 
     def _ocr_easyocr_sync(self, image_path: str, bbox: dict, lang: str) -> str:
-        """Run EasyOCR on a cropped region (synchronous)."""
+        """Run EasyOCR on a cropped region."""
         self._load_easyocr(lang)
-
         import numpy as np
         crop = self._crop_bbox(image_path, bbox)
         crop_np = np.array(crop)
@@ -111,6 +142,31 @@ class OcrEngine:
         results = reader.readtext(crop_np, detail=0, paragraph=True)
         text = " ".join(results) if results else ""
         return text.strip()
+
+    def _ocr_tesseract_sync(self, image_path: str, bbox: dict, lang: str) -> str:
+        """Run pytesseract on a cropped region."""
+        import pytesseract
+        crop = self._crop_bbox(image_path, bbox)
+
+        lang_map = {
+            "ja": "jpn",
+            "ko": "kor",
+            "zh": "chi_sim",
+            "en": "eng",
+        }
+        tess_lang = lang_map.get(lang, "eng")
+
+        try:
+            text = pytesseract.image_to_string(crop, lang=tess_lang)
+        except Exception:
+            # If language data not available, try eng fallback
+            text = pytesseract.image_to_string(crop, lang="eng")
+
+        return text.strip()
+
+    def _ocr_placeholder_sync(self, image_path: str, bbox: dict) -> str:
+        """Placeholder when no OCR engine is available."""
+        return f"[テキスト {bbox['x']},{bbox['y']}]"
 
     # ── Public Async API ──────────────────────────────────────────
 
@@ -122,28 +178,42 @@ class OcrEngine:
     ) -> str:
         """
         Async OCR extraction from a bounding box region.
-
-        Args:
-            image_path: Absolute path to the full page image.
-            bbox: Bounding box dict {"x", "y", "w", "h"}.
-            source_lang: Source language code ("ja", "ko", "zh", "en").
-
-        Returns:
-            Extracted text string (may be empty if OCR fails).
+        Automatically selects the best available backend.
         """
         try:
-            if source_lang == "ja":
+            backend = self._detect_backend()
+
+            if backend == "manga_ocr" and source_lang == "ja":
                 text = await asyncio.to_thread(
                     self._ocr_japanese_sync, image_path, bbox,
                 )
-            else:
+            elif backend == "easyocr":
                 text = await asyncio.to_thread(
                     self._ocr_easyocr_sync, image_path, bbox, source_lang,
+                )
+            elif backend == "tesseract":
+                text = await asyncio.to_thread(
+                    self._ocr_tesseract_sync, image_path, bbox, source_lang,
+                )
+            elif backend == "manga_ocr" and source_lang != "ja":
+                # manga-ocr only supports Japanese, try easyocr for others
+                try:
+                    text = await asyncio.to_thread(
+                        self._ocr_easyocr_sync, image_path, bbox, source_lang,
+                    )
+                except Exception:
+                    text = await asyncio.to_thread(
+                        self._ocr_placeholder_sync, image_path, bbox,
+                    )
+            else:
+                # Placeholder fallback
+                text = await asyncio.to_thread(
+                    self._ocr_placeholder_sync, image_path, bbox,
                 )
 
             if text:
                 logger.debug(
-                    f"OCR [{source_lang}] at ({bbox['x']},{bbox['y']}): "
+                    f"OCR [{source_lang}/{backend}] at ({bbox['x']},{bbox['y']}): "
                     f"'{text[:50]}{'...' if len(text) > 50 else ''}'"
                 )
             else:
@@ -153,4 +223,5 @@ class OcrEngine:
 
         except Exception as e:
             logger.error(f"OCR failed at ({bbox['x']},{bbox['y']}): {e}")
-            return ""
+            # Return placeholder so block still gets created
+            return f"[テキスト {bbox['x']},{bbox['y']}]"

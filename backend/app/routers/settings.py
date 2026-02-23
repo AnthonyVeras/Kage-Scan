@@ -216,6 +216,9 @@ async def poll_copilot_auth(
             headers={
                 "Authorization": f"token {access_token}",
                 "Accept": "application/json",
+                "User-Agent": "GitHubCopilotChat/0.22.2",
+                "Editor-Version": "vscode/1.96.0",
+                "Editor-Plugin-Version": "copilot-chat/0.22.2",
             },
         )
 

@@ -109,12 +109,16 @@ const useSettingsStore = create((set, get) => ({
     },
 
     _pollForAuth: (deviceCode, intervalSec) => {
-        const pollTimer = setInterval(async () => {
+        let currentInterval = intervalSec;
+
+        const poll = async () => {
+            // Check if polling was cancelled
+            if (!get().isPolling) return;
+
             try {
                 const result = await pollCopilotAuth(deviceCode);
 
                 if (result.status === "authenticated") {
-                    clearInterval(pollTimer);
                     set({
                         isPolling: false,
                         copilotAuthenticated: true,
@@ -124,33 +128,56 @@ const useSettingsStore = create((set, get) => ({
                         verificationUri: null,
                         pollMessage: null,
                         success: "Copilot conectado com sucesso!",
+                        _pollTimer: null,
                     });
                     setTimeout(() => set({ success: null }), 3000);
-                } else if (result.status === "error") {
-                    clearInterval(pollTimer);
+                    return;
+                }
+
+                if (result.status === "error") {
                     set({
                         isPolling: false,
                         error: result.message || "Auth failed",
                         deviceCode: null,
                         userCode: null,
+                        _pollTimer: null,
                     });
-                } else {
-                    set({ pollMessage: result.message || "Aguardando..." });
+                    return;
                 }
+
+                // "pending" — schedule next poll
+                // If GitHub says "slow_down", add 5 seconds per spec
+                if (result.message && result.message.toLowerCase().includes("slow down")) {
+                    currentInterval += 5;
+                }
+
+                set({ pollMessage: result.message || "Aguardando..." });
+                const timer = setTimeout(poll, currentInterval * 1000);
+                set({ _pollTimer: timer });
             } catch {
-                clearInterval(pollTimer);
-                set({ isPolling: false, error: "Polling failed" });
+                set({
+                    isPolling: false,
+                    error: "Polling failed",
+                    _pollTimer: null,
+                });
             }
-        }, intervalSec * 1000);
+        };
+
+        // First poll after the interval
+        const timer = setTimeout(poll, currentInterval * 1000);
+        set({ _pollTimer: timer });
     },
 
     cancelCopilotFlow: () => {
+        const timer = get()._pollTimer;
+        if (timer) clearTimeout(timer);
         set({
             isPolling: false,
             deviceCode: null,
             userCode: null,
             verificationUri: null,
             pollMessage: null,
+            _pollTimer: null,
         });
     },
 

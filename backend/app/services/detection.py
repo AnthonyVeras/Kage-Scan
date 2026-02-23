@@ -102,39 +102,105 @@ class TextDetector:
 
     def _detect_fallback(self, img: np.ndarray) -> list[dict]:
         """
-        Fallback contour-based detection when comic-text-detector
-        is unavailable. Good enough for testing the pipeline.
+        Fallback detection using Canny edges + morphological closing.
+        Targets speech bubble outlines (closed curves on white background).
         """
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img_h, img_w = img.shape[:2]
 
-        # Adaptive threshold to isolate text-like regions
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV, 25, 10,
+        # ── Step 1: Edge detection to find bubble borders ──────
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 30, 100)
+
+        # Close gaps in bubble outlines so they form closed shapes
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+        # ── Step 2: Find contours from closed edges ────────────
+        contours, hierarchy = cv2.findContours(
+            closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE,
         )
 
-        # Dilate to merge nearby characters into blocks
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 20))
-        dilated = cv2.dilate(binary, kernel, iterations=2)
-
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        img_h, img_w = img.shape[:2]
-        min_area = (img_h * img_w) * 0.001  # At least 0.1% of image area
-        max_area = (img_h * img_w) * 0.5    # No more than 50% of image area
+        min_area = (img_h * img_w) * 0.01    # At least 1% of image
+        max_area = (img_h * img_w) * 0.25    # No more than 25% of image
 
         bboxes = []
-        for cnt in contours:
+        for i, cnt in enumerate(contours):
             x, y, w, h = cv2.boundingRect(cnt)
             area = w * h
-            if min_area < area < max_area and w > 15 and h > 15:
-                bboxes.append({"x": x, "y": y, "w": w, "h": h})
+
+            # Size filter
+            if area < min_area or area > max_area:
+                continue
+            if w < 50 or h < 50:
+                continue
+
+            # Aspect ratio filter (real bubbles are roundish)
+            aspect = max(w, h) / min(w, h)
+            if aspect > 3.5:
+                continue
+
+            # ── Step 3: White-interior check ──────────────────
+            # Speech bubbles have mostly white/light interiors
+            roi = gray[y:y+h, x:x+w]
+            if roi.size == 0:
+                continue
+
+            mean_brightness = roi.mean()
+            # Bubbles are bright inside (white paper), reject dark regions
+            if mean_brightness < 200:
+                continue
+
+            # Check what percentage of the interior is white (>200)
+            white_ratio = (roi > 200).sum() / roi.size
+            if white_ratio < 0.65:
+                continue
+
+            bboxes.append({"x": x, "y": y, "w": w, "h": h})
+
+        # Remove duplicate/overlapping bboxes
+        bboxes = self._remove_overlapping(bboxes)
 
         # Sort top-to-bottom, right-to-left (manga reading order)
-        bboxes.sort(key=lambda b: (b["x"] // 100, b["y"]))
+        bboxes.sort(key=lambda b: (-b["x"], b["y"]))
 
-        logger.info(f"Fallback detection found {len(bboxes)} regions")
+        logger.info(f"Fallback detection found {len(bboxes)} bubble regions")
         return bboxes
+
+    @staticmethod
+    def _remove_overlapping(bboxes: list[dict], iou_threshold: float = 0.5) -> list[dict]:
+        """Remove overlapping bboxes, keeping the larger one."""
+        if not bboxes:
+            return []
+
+        # Sort by area (largest first)
+        sorted_boxes = sorted(bboxes, key=lambda b: b["w"] * b["h"], reverse=True)
+        keep = []
+
+        for box in sorted_boxes:
+            overlapping = False
+            for kept in keep:
+                # Calculate IoU
+                x1 = max(box["x"], kept["x"])
+                y1 = max(box["y"], kept["y"])
+                x2 = min(box["x"] + box["w"], kept["x"] + kept["w"])
+                y2 = min(box["y"] + box["h"], kept["y"] + kept["h"])
+
+                if x1 < x2 and y1 < y2:
+                    intersection = (x2 - x1) * (y2 - y1)
+                    box_area = box["w"] * box["h"]
+                    kept_area = kept["w"] * kept["h"]
+                    union = box_area + kept_area - intersection
+                    iou = intersection / union if union > 0 else 0
+
+                    if iou > iou_threshold:
+                        overlapping = True
+                        break
+
+            if not overlapping:
+                keep.append(box)
+
+        return keep
 
     async def detect(self, image_path: str) -> list[dict]:
         """

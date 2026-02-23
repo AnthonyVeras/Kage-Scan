@@ -88,6 +88,13 @@ async def _process_page(
     image_full_path = str(settings.DATA_DIR / page.image_path)
     logger.info(f"  📄 Processing page {page.page_number}: {page.filename}")
 
+    # Clear existing text blocks from previous runs
+    existing_blocks = await db.execute(
+        select(TextBlock).where(TextBlock.page_id == page.id)
+    )
+    for old_block in existing_blocks.scalars():
+        await db.delete(old_block)
+
     page.status = "processing"
     await db.commit()
 
@@ -137,7 +144,12 @@ async def _process_page(
             target_lang=target_lang,
         )
     except Exception as e:
-        logger.error(f"  Translation failed for {page.filename}: {e}")
+        import traceback
+        err_msg = f"Translation failed for {page.filename}: {e}\n{traceback.format_exc()}"
+        logger.error(f"  {err_msg}")
+        # Also write to a log file for debugging
+        with open("translation_errors.log", "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*60}\n{err_msg}\n")
         translated_texts = [f"[ERRO] {t}" for t in original_texts]
 
     # ── Step D: Save TextBlock records ────────────────────────────
