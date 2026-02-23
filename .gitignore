@@ -1,0 +1,53 @@
+# ══════════════════════════════════════════
+# Kage Scan — .gitignore
+# ══════════════════════════════════════════
+
+# ── Python / Backend ─────────────────────
+backend/venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ── SQLite Database ──────────────────────
+*.db
+*.sqlite3
+backend/data/
+
+# ── Node / Frontend ──────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── Environment ──────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── IDE / Editor ─────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── OS ───────────────────────────────────
+desktop.ini
+ehthumbs.db
+
+# ── AI Models (large files) ──────────────
+*.pt
+*.pth
+*.onnx
+*.bin
+*.safetensors

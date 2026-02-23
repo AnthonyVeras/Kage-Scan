@@ -1,0 +1,22 @@
+# === Kage Scan - AI / Vision Dependencies ===
+# These packages are heavy (PyTorch, ML models) and may require special setup.
+# Install AFTER the core requirements.txt is installed.
+
+# --- PyTorch (CPU-only to save space, switch to cu121 for GPU) ---
+# torch>=2.1.0
+# torchvision>=0.16.0
+# Install manually with:  pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# --- OCR ---
+manga-ocr>=0.1.11              # Japanese OCR (requires PyTorch)
+easyocr>=1.7.0                 # Multi-language OCR (KR, CN, EN)
+
+# --- Text Detection ---
+# comic-text-detector is NOT on PyPI. Install from GitHub:
+#   pip install git+https://github.com/dmMaze/comic-text-detector.git
+# Our code has a contour-based fallback if this is not installed.
+
+# --- Inpainting ---
+# iopaint has complex deps. Install separately:
+#   pip install iopaint
+# Our code falls back to OpenCV inpainting if this is not installed.

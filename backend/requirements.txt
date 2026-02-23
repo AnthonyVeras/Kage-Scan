@@ -1,0 +1,27 @@
+# === Kage Scan - Backend Dependencies ===
+
+# --- Web Framework ---
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.27.0,<1.0.0
+python-multipart>=0.0.9        # File uploads
+
+# --- Database ---
+sqlalchemy>=2.0.0,<3.0.0
+aiosqlite>=0.20.0              # Async SQLite driver
+
+# --- Data Validation / Settings ---
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0      # BaseSettings for .env config
+
+# --- LLM Orchestration (BYOK) ---
+litellm>=1.30.0                # Unified LLM API (OpenAI, Anthropic, Gemini, Ollama)
+
+# --- Image Processing ---
+opencv-python-headless>=4.9.0  # Image manipulation (headless for server)
+Pillow>=10.0.0                 # Image I/O and text rendering
+numpy>=1.24.0                  # Array processing (used by CV2, models)
+
+# --- Utilities ---
+httpx>=0.27.0                  # Async HTTP client (for litellm/health checks)
+loguru>=0.7.0                  # Structured logging
+aiofiles>=23.2.0               # Async file I/O for upload handling

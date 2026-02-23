@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════════
+   Kage Scan — Ink & Sakura Design System
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Google Fonts ─────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+/* ── Base Layer ───────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', 'Noto Sans JP', system-ui, sans-serif;
+    background-color: #000000;
+    color: #E5E5E5;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Manga reticular texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image: url('https://www.transparenttextures.com/patterns/dark-matter.png');
+    background-repeat: repeat;
+    background-size: 300px;
+    opacity: 0.04;
+    pointer-events: none;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0A0A0A;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2A2A2A;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #F391A0;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: rgba(243, 145, 160, 0.3);
+    color: #FFFFFF;
+  }
+}
+
+/* ── Component Layer ──────────────────────────────────────── */
+@layer components {
+  /* Glass surface (navbar, sidebars, cards) */
+  .glass-surface {
+    background: rgba(10, 10, 10, 0.70);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .glass-surface-strong {
+    background: rgba(10, 10, 10, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* Sakura gradient text */
+  .text-sakura-gradient {
+    background: linear-gradient(135deg, #FFFFFF 0%, #FFB8C6 50%, #F391A0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Sakura glow button */
+  .btn-sakura {
+    @apply px-5 py-2.5 rounded-xl font-medium text-sm
+           bg-gradient-to-r from-sakura-400 to-sakura-500
+           text-white shadow-sakura-md
+           transition-all duration-300 ease-out;
+  }
+
+  .btn-sakura:hover {
+    @apply shadow-sakura-lg scale-[1.02];
+    filter: brightness(1.1);
+  }
+
+  .btn-sakura:active {
+    @apply scale-[0.98];
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    @apply px-4 py-2 rounded-xl font-medium text-sm
+           text-neutral-400 border border-white/5
+           transition-all duration-300 ease-out;
+  }
+
+  .btn-ghost:hover {
+    @apply text-sakura-300 border-sakura-400/20 bg-sakura-400/5;
+  }
+
+  /* Icon button with glow */
+  .icon-btn {
+    @apply p-2.5 rounded-xl text-neutral-500
+           transition-all duration-300 ease-out;
+  }
+
+  .icon-btn:hover {
+    @apply text-sakura-300 bg-sakura-400/10 shadow-sakura-sm;
+  }
+
+  .icon-btn.active {
+    @apply text-sakura-400 bg-sakura-400/15;
+  }
+
+  /* Card surface */
+  .card {
+    @apply rounded-2xl border border-white/[0.04]
+           bg-ink-600/80 backdrop-blur-md
+           transition-all duration-300 ease-out;
+  }
+
+  .card:hover {
+    @apply border-sakura-400/10 shadow-sakura-sm;
+  }
+
+  /* Divider */
+  .divider-h {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-white/[0.06] to-transparent;
+  }
+
+  .divider-v {
+    @apply w-px h-full bg-gradient-to-b from-transparent via-white/[0.06] to-transparent;
+  }
+}
+
+/* ── Utility Layer ────────────────────────────────────────── */
+@layer utilities {
+  /* Stagger animation delays for lists */
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.10s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.20s; }
+  .stagger-5 { animation-delay: 0.25s; }
+
+  /* Text glow effect */
+  .text-glow-sakura {
+    text-shadow: 0 0 20px rgba(243, 145, 160, 0.4);
+  }
+}
